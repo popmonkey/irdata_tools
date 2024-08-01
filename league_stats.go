@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
@@ -24,6 +25,8 @@ var (
 	credsProvider irdata.CredsFromTerminal
 	db            *sql.DB
 )
+
+const resultCacheHours = 4 * 365 * 24
 
 func init() {
 	ir = irdata.Open(context.Background())
@@ -74,8 +77,13 @@ func main() {
 	createDriverStmt := `
 		CREATE TABLE driver (
 			name VARCHAR NOT NULL PRIMARY KEY,
+			races INTEGER,
 			laps INTEGER,
-			incidents INTEGER
+			incident_points INTEGER,
+			incident_offtrack_count INTEGER,
+			incident_controlloss_count INTEGER,
+			incident_carcontact_count INTEGER,
+			blackflag_count INTEGER
 		)
 	`
 
@@ -88,7 +96,7 @@ func main() {
 }
 
 func processLeague(_ string, leagueId int64) {
-	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/seasons?league_id=%d", leagueId), time.Duration(12)*time.Hour)
+	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/seasons?league_id=%d&retired=true", leagueId), time.Duration(1)*time.Hour)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -105,7 +113,16 @@ func processLeague(_ string, leagueId int64) {
 	}
 
 	selectDriversSql := `
-		SELECT name, laps, incidents, (CAST(incidents AS FLOAT) / CAST(laps AS FLOAT)) AS ratio FROM driver ORDER BY ratio DESC
+		SELECT
+		    name,
+			races,
+		    laps,
+			incident_points,
+			incident_offtrack_count,
+			incident_controlloss_count,
+			incident_carcontact_count,
+			blackflag_count
+		FROM driver
 	`
 
 	rows, err := db.Query(selectDriversSql)
@@ -113,26 +130,46 @@ func processLeague(_ string, leagueId int64) {
 		log.Panic(err)
 	}
 
-	fmt.Printf("Driver,Laps,Incidents,Ratio\n")
+	fmt.Printf("Driver,Races,Laps,Inc,Offtracks,ControlLosses,CarContacts,BlackFlags\n")
 
 	for rows.Next() {
 		var (
-			name      sql.NullString
-			laps      sql.NullInt64
-			incidents sql.NullInt64
-			ratio     sql.NullFloat64
+			name                       sql.NullString
+			races                      sql.NullInt64
+			laps                       sql.NullInt64
+			incident_points            sql.NullInt64
+			incident_offtrack_count    sql.NullInt64
+			incident_controlloss_count sql.NullInt64
+			incident_carcontact_count  sql.NullInt64
+			blackflag_count            sql.NullInt64
 		)
 
-		err := rows.Scan(&name, &laps, &incidents, &ratio)
+		err := rows.Scan(
+			&name,
+			&races,
+			&laps,
+			&incident_points,
+			&incident_offtrack_count,
+			&incident_controlloss_count,
+			&incident_carcontact_count,
+			&blackflag_count,
+		)
 		if err != nil {
 			log.Panic(err)
 		}
 
-		fmt.Printf("%s,%d,%d,%.4f\n",
+		fmt.Printf("%s,%d,%d,%d,%d,%d,%d,%d\n",
 			name.String,
+			races.Int64,
 			laps.Int64,
-			incidents.Int64,
-			ratio.Float64,
+			incident_points.Int64,
+			incident_offtrack_count.Int64,
+			incident_controlloss_count.Int64,
+			incident_carcontact_count.Int64,
+			blackflag_count.Int64,
+			// incident_offtrack_count.Int64*1+
+			// 	incident_controlloss_count.Int64*2+
+			// 	incident_carcontact_count.Int64*4,
 		)
 	}
 }
@@ -151,7 +188,7 @@ func processSeason(leagueId int64, season map[string]interface{}) {
 
 	log.Print(name)
 
-	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/season_sessions?league_id=%d&season_id=%d", leagueId, id), time.Duration(12)*time.Hour)
+	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/season_sessions?league_id=%d&season_id=%d", leagueId, id), time.Duration(1)*time.Hour)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -163,10 +200,12 @@ func processSeason(leagueId int64, season map[string]interface{}) {
 		log.Panic(err)
 	}
 
-	for _, session := range sessions["sessions"].([]interface{}) {
-		processSession(session.(map[string]interface{}))
+	for _, s := range sessions["sessions"].([]interface{}) {
+		session := s.(map[string]interface{})
+		if session["has_results"].(bool) {
+			processSession(session)
+		}
 	}
-
 }
 
 func processSession(seasonSession map[string]interface{}) {
@@ -176,7 +215,7 @@ func processSession(seasonSession map[string]interface{}) {
 
 	id := int64(seasonSession["subsession_id"].(float64))
 
-	data, err := ir.GetWithCache(fmt.Sprintf("/data/results/get?subsession_id=%d", id), time.Duration(12)*time.Hour)
+	data, err := ir.GetWithCache(fmt.Sprintf("/data/results/get?subsession_id=%d", id), time.Duration(resultCacheHours)*time.Hour)
 	if err != nil {
 		log.Panic(err)
 	}
@@ -196,18 +235,51 @@ func processSession(seasonSession map[string]interface{}) {
 		sr := subsessionResult.(map[string]interface{})
 
 		if sr["simsession_type_name"] == "Race" {
+			// data, err = ir.GetWithCache(
+			// 	fmt.Sprintf(
+			// 		"/data/results/event_log?subsession_id=%d&simsession_number=%d",
+			// 		int(subsession["subsession_id"].(float64)),
+			// 		int(sr["simsession_number"].(float64)),
+			// 	), time.Duration(resultCacheHours)*time.Hour)
+			// if err != nil {
+			// 	log.Panic(err)
+			// }
+
+			// var events map[string]interface{}
+
+			// err = json.Unmarshal(data, &events)
+			// if err != nil {
+			// 	log.Panic(err)
+			// }
+
+			// if events[irdata.ChunkDataKey] != nil {
+			// 	for _, eventI := range events[irdata.ChunkDataKey].([]interface{}) {
+			// 		event := eventI.(map[string]interface{})
+
+			// 		eventDriver := event["display_name"].(string)
+			// 		eventCustId := int(event["cust_id"].(float64))
+			// 		eventCode := int(event["event_code"].(float64))
+			// 		eventMessage := event["message"].(string)
+
+			// 		log.Printf("%s [%d]: [%d] %s", eventDriver, eventCustId, eventCode, eventMessage)
+			// 	}
+			// }
+
 			track := subsession["track"].(map[string]interface{})
 			log.Printf("%s, Week %d [%s]", subsession["league_season_name"], int(subsession["race_week_num"].(float64))+1, track["track_name"])
 			for _, teamResult := range sr["results"].([]interface{}) {
 				tr := teamResult.(map[string]interface{})
 
+				subsession_id := int(subsession["subsession_id"].(float64))
+				simsession_number := int(sr["simsession_number"].(float64))
+
 				if tr["driver_results"] == nil {
-					processDriver(tr)
+					processDriver(tr, subsession_id, simsession_number)
 				} else {
 					for _, driverResult := range tr["driver_results"].([]interface{}) {
 						dr := driverResult.(map[string]interface{})
 
-						processDriver(dr)
+						processDriver(dr, subsession_id, simsession_number)
 					}
 				}
 			}
@@ -215,41 +287,156 @@ func processSession(seasonSession map[string]interface{}) {
 	}
 }
 
-func processDriver(dr map[string]interface{}) {
-	var err error
+func processDriver(dr map[string]interface{}, subsession_id int, simsession_number int) {
+	type incidentCounterT struct {
+		offtrack    int
+		contact     int
+		carContact  int
+		lostControl int
+		blackFlag   int
+	}
+
+	var lapDataParams string
+
+	if dr["team_id"] == nil {
+		lapDataParams = fmt.Sprintf("cust_id=%d", int(dr["cust_id"].(float64)))
+	} else {
+		lapDataParams = fmt.Sprintf("team_id=%d", int(dr["team_id"].(float64)))
+	}
+
+	data, err := ir.GetWithCache(
+		fmt.Sprintf(
+			"/data/results/lap_data?subsession_id=%d&simsession_number=%d&%s",
+			subsession_id, simsession_number, lapDataParams),
+		time.Duration(resultCacheHours)*time.Hour,
+	)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	var lapData map[string]interface{}
+
+	err = json.Unmarshal(data, &lapData)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	incidentCollector := incidentCounterT{
+		offtrack:    0,
+		contact:     0,
+		carContact:  0,
+		lostControl: 0,
+		blackFlag:   0,
+	}
+
+	var incidentLog []string
+
+	if lapData[irdata.ChunkDataKey] != nil {
+		for _, le := range lapData[irdata.ChunkDataKey].([]interface{}) {
+			lapEvent := le.(map[string]interface{})
+
+			if lapEvent["incident"].(bool) {
+				for _, inc := range lapEvent["lap_events"].([]interface{}) {
+					switch inc.(string) {
+					case "off track":
+						incidentLog = append(incidentLog, "offtrack")
+						incidentCollector.offtrack++
+					case "contact":
+						incidentLog = append(incidentLog, "contact")
+						incidentCollector.contact++
+					case "car contact":
+						incidentLog = append(incidentLog, "car contact")
+						incidentCollector.carContact++
+					case "lost control":
+						incidentLog = append(incidentLog, "lost control")
+						incidentCollector.lostControl++
+					case "black flag":
+						incidentLog = append(incidentLog, "black flag")
+						incidentCollector.blackFlag++
+					default:
+						incidentLog = append(incidentLog, fmt.Sprintf("(unknown : %s)", inc.(string)))
+					}
+				}
+			}
+		}
+	}
+
+	log.Printf("incident log: [%s]", strings.Join(incidentLog, ", "))
 
 	name := dr["display_name"].(string)
 	laps := int(dr["laps_complete"].(float64))
-	incidents := int(dr["incidents"].(float64))
+	incidentPoints := int(dr["incidents"].(float64))
 
-	log.Printf("\t%s: laps: %d, incidents %d", name, laps, incidents)
+	log.Printf("\t%s: laps: %d, incidents %d [%v]", name, laps, incidentPoints, incidentCollector)
 
 	selectDriverStmt := `
-		SELECT laps, incidents FROM driver WHERE name=?
+		SELECT
+		    races,
+		    laps,
+		    incident_points,
+			incident_offtrack_count,
+			incident_controlloss_count,
+			incident_carcontact_count,
+			blackflag_count
+		FROM driver WHERE name=?
 	`
 
 	var (
-		priorLaps      int
-		priorIncidents int
+		priorRaces          int
+		priorLaps           int
+		priorIncidentPoints int
+		priorIncidentCounts incidentCounterT
 	)
 
-	err = db.QueryRow(selectDriverStmt, name).Scan(&priorLaps, &priorIncidents)
+	err = db.QueryRow(selectDriverStmt, name).Scan(
+		&priorRaces,
+		&priorLaps,
+		&priorIncidentPoints,
+		&priorIncidentCounts.offtrack,
+		&priorIncidentCounts.lostControl,
+		&priorIncidentCounts.carContact,
+		&priorIncidentCounts.blackFlag,
+	)
 	if err == nil {
 		updateDriverStmt := `
-			UPDATE driver SET laps=?, incidents=? WHERE name=?
+			UPDATE driver SET
+			    races=?,
+			    laps=?,
+			    incident_points=?,
+			    incident_offtrack_count=?,
+			    incident_controlloss_count=?,
+			    incident_carcontact_count=?,
+				blackflag_count=?
+            WHERE name=?
 		`
 
-		_, err = db.Exec(updateDriverStmt, priorLaps+laps, priorIncidents+incidents, name)
+		_, err = db.Exec(updateDriverStmt,
+			priorRaces+1,
+			priorLaps+laps,
+			priorIncidentPoints+incidentPoints,
+			priorIncidentCounts.offtrack+incidentCollector.offtrack,
+			priorIncidentCounts.lostControl+incidentCollector.lostControl,
+			priorIncidentCounts.carContact+incidentCollector.carContact+incidentCollector.contact,
+			priorIncidentCounts.blackFlag+incidentCollector.blackFlag,
+			name)
 		if err != nil {
 			log.Panic(err)
 		}
 
 	} else if errors.Is(err, sql.ErrNoRows) {
 		insertDriverStmt := `
-			INSERT INTO driver (name, laps, incidents) VALUES (?, ?, ?)
+			INSERT INTO driver
+			    (name, races, laps, incident_points, incident_offtrack_count, incident_controlloss_count, incident_carcontact_count, blackflag_count)
+			VALUES (?, 1, ?, ?, ?, ?, ?, ?)
 		`
 
-		_, err = db.Exec(insertDriverStmt, name, laps, incidents)
+		_, err = db.Exec(insertDriverStmt, name, laps,
+			incidentPoints,
+			incidentCollector.offtrack,
+			incidentCollector.lostControl,
+			incidentCollector.carContact+incidentCollector.contact,
+			incidentCollector.blackFlag,
+		)
 		if err != nil {
 			log.Panic(err)
 		}
