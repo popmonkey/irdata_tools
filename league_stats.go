@@ -288,6 +288,11 @@ func processSession(seasonSession map[string]interface{}) {
 }
 
 func processDriver(dr map[string]interface{}, subsession_id int, simsession_number int) {
+	if dr["ai"].(bool) {
+		log.Printf("%s is an AI Driver - skipping", dr["display_name"].(string))
+		return
+	}
+
 	type incidentCounterT struct {
 		offtrack    int
 		contact     int
