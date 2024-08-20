@@ -38,16 +38,15 @@ func init() {
 func main() {
 	var err error
 
-	if len(os.Args) != 5 {
-		fmt.Println("Usage: stats <keyfile> <credsfile> <league tag> <league id>")
+	if len(os.Args) != 4 {
+		fmt.Println("Usage: stats <keyfile> <credsfile> <league id>")
 		os.Exit(1)
 	}
 
 	var (
 		keyFile   = os.Args[1]
 		credsFile = os.Args[2]
-		leagueTag = os.Args[3]
-		leagueId  = os.Args[4]
+		leagueId  = os.Args[3]
 	)
 
 	_, err = os.Stat(credsFile)
@@ -94,10 +93,10 @@ func main() {
 		log.Panic(err)
 	}
 
-	processLeague(leagueTag, int64(leagueIdNum))
+	processLeague(int64(leagueIdNum))
 }
 
-func processLeague(_ string, leagueId int64) {
+func processLeague(leagueId int64) {
 	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/seasons?league_id=%d&retired=true", leagueId), time.Duration(1)*time.Hour)
 	if err != nil {
 		log.Panic(err)
