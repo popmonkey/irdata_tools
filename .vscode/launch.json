@@ -19,5 +19,21 @@
             "program": "${workspaceFolder}/league_stats.go",
             "args": ["/Users/jules/irs.key", "/Users/jules/ir.creds", "wcr", "8093"],
         },    
+        {
+            "name": "Launch League DB",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/league_db/",
+            "args": ["/Users/jules/irs.key", "/Users/jules/ir.creds", "8093"],
+        },
+        {
+            "name": "Launch Ban Check",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceFolder}/ban_check/main.go",
+            "args": ["/Users/jules/irs.key", "/Users/jules/ir.creds", "Jason Chess", "2022-08-10"],
+        },    
     ]
 }
