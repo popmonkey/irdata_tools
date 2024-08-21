@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,8 +39,8 @@ func init() {
 func main() {
 	var err error
 
-	if len(os.Args) != 4 {
-		fmt.Println("Usage: stats <keyfile> <credsfile> <league id>")
+	if len(os.Args) < 4 {
+		fmt.Println("Usage: stats <keyfile> <credsfile> <league id> [<ignored season ids>...]")
 		os.Exit(1)
 	}
 
@@ -48,6 +49,17 @@ func main() {
 		credsFile = os.Args[2]
 		leagueId  = os.Args[3]
 	)
+
+	var ignoreSeasonIds []int
+
+	for _, id := range os.Args[4:] {
+		i, err := strconv.Atoi(id)
+		if err != nil {
+			log.Fatalf("Not a valid id: %v", id)
+		}
+
+		ignoreSeasonIds = append(ignoreSeasonIds, i)
+	}
 
 	_, err = os.Stat(credsFile)
 	if err != nil {
@@ -93,10 +105,10 @@ func main() {
 		log.Panic(err)
 	}
 
-	processLeague(int64(leagueIdNum))
+	processLeague(int64(leagueIdNum), ignoreSeasonIds)
 }
 
-func processLeague(leagueId int64) {
+func processLeague(leagueId int64, ignoreSeasonIds []int) {
 	data, err := ir.GetWithCache(fmt.Sprintf("/data/league/seasons?league_id=%d&retired=true", leagueId), time.Duration(1)*time.Hour)
 	if err != nil {
 		log.Panic(err)
@@ -109,8 +121,13 @@ func processLeague(leagueId int64) {
 		log.Panic(err)
 	}
 
-	for _, season := range league["seasons"].([]interface{}) {
-		processSeason(leagueId, season.(map[string]interface{}))
+	for _, s := range league["seasons"].([]interface{}) {
+		season := s.(map[string]interface{})
+		if !slices.Contains(ignoreSeasonIds, int(season["season_id"].(float64))) {
+			processSeason(leagueId, season)
+		} else {
+			log.Printf("Skipping season: %s [%s]", season["season_name"], season["season_id"])
+		}
 	}
 
 	selectDriversSql := `
