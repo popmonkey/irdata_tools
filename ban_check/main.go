@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/url"
@@ -15,29 +16,59 @@ import (
 )
 
 var (
-	ir *irdata.Irdata
+	ir              *irdata.Irdata
+	showDetailsFlag bool
+	showHelpFlag    bool
 )
+
+const toolName = "ban_check"
 
 func init() {
 	ir = irdata.Open(context.Background())
 
 	ir.SetLogLevel(irdata.LogLevelError)
+
+	flag.BoolVar(&showHelpFlag, "h", false, "show help")
+	flag.BoolVar(&showHelpFlag, "help", false, "show help")
+	flag.BoolVar(&showDetailsFlag, "d", false, "show detailed race info (default: false)")
+	flag.BoolVar(&showDetailsFlag, "details", false, "show detailed race info (default: false)")
 }
 
 func main() {
 	var err error
 
-	if len(os.Args) != 5 {
-		fmt.Println("Usage: ban_check <keyfile> <credsfile> <member name> <date>")
+	flag.Parse()
+
+	flag.Usage = func() {
+		w := flag.CommandLine.Output()
+		fmt.Fprintf(w, "Usage: %s [options] <keyfile> <credsfile> <member name or id> <date> [<subsession id>]\n", toolName)
+		flag.PrintDefaults()
+	}
+
+	if showHelpFlag {
+		flag.Usage()
+		os.Exit(0)
+	}
+
+	args := flag.Args()
+	countArgs := len(args)
+
+	if countArgs < 4 || countArgs > 5 {
+		flag.Usage()
 		os.Exit(1)
 	}
 
 	var (
-		keyFile    = os.Args[1]
-		credsFile  = os.Args[2]
-		searchTerm = os.Args[3]
-		startDate  = os.Args[4]
+		keyFile      = args[0]
+		credsFile    = args[1]
+		searchTerm   = args[2]
+		startDate    = args[3]
+		subsessionId string
 	)
+
+	if countArgs > 4 {
+		subsessionId = args[4]
+	}
 
 	// valiDate, lol
 	startTime, err := dateparse.ParseLocal(startDate)
@@ -81,7 +112,7 @@ func main() {
 	if resultCount > 1 {
 		for index, result := range searchResults {
 			r := result.(map[string]interface{})
-			log.Printf("%d. %s [%d]", index, r["display_name"].(string), int(r["cust_id"].(float64)))
+			fmt.Printf("%d. %s [%d]", index, r["display_name"].(string), int(r["cust_id"].(float64)))
 		}
 		log.Fatal("be more specific (you can use the member id)...")
 	}
@@ -170,15 +201,17 @@ func main() {
 		}
 
 		if s["official_session"].(bool) && int(s["event_type"].(float64)) == 5 {
-			fmt.Printf("%[4]s %[1]t %[2]s [%[3]d] : laps: %[6]d of %[7]d inc: %[5]d\n",
-				s["official_session"].(bool),
-				s["series_name"].(string),
-				int(s["subsession_id"].(float64)),
-				s["start_time"].(string),
-				int(s["incidents"].(float64)),
-				int(s["laps_complete"].(float64)),
-				int(s["event_laps_complete"].(float64)),
-			)
+			if showDetailsFlag {
+				fmt.Printf("%[4]s %[1]t %[2]s [%[3]d] : laps: %[6]d of %[7]d inc: %[5]d\n",
+					s["official_session"].(bool),
+					s["series_name"].(string),
+					int(s["subsession_id"].(float64)),
+					s["start_time"].(string),
+					int(s["incidents"].(float64)),
+					int(s["laps_complete"].(float64)),
+					int(s["event_laps_complete"].(float64)),
+				)
+			}
 
 			gaps = append(gaps, struct {
 				start    time.Time
@@ -204,5 +237,58 @@ func main() {
 		return gaps[i].duration.Hours() > gaps[j].duration.Hours()
 	})
 
-	fmt.Printf("\nLargest gap: %0.2[1]f days starting %[2]v\n", gaps[0].duration.Hours()/24.0, gaps[0].start)
+	fmt.Print("\nLargest gaps:\n")
+
+	for _, gap := range gaps[0:min(5, len(gaps)-1)] {
+		fmt.Printf("\tgap: %0.2[1]f days starting %[2]v\n", gap.duration.Hours()/24.0, gap.start)
+	}
+
+	if len(subsessionId) > 0 {
+		data, err = ir.Get(fmt.Sprintf("/data/results/get?subsession_id=%s", subsessionId))
+		if err != nil {
+			log.Panic(err)
+		}
+
+		var session map[string]interface{}
+
+		err = json.Unmarshal(data, &session)
+		if err != nil {
+			log.Panic(err)
+		}
+
+		track := session["track"].(map[string]interface{})
+
+		fmt.Printf("\n%s @ %s (%s):\n", session["season_name"], track["track_name"], session["start_time"])
+
+		for _, simsession := range session["session_results"].([]interface{}) {
+			simsession := simsession.(map[string]interface{})
+
+			if simsession["simsession_name"] == "RACE" {
+				data, err = ir.Get(fmt.Sprintf("/data/results/event_log?subsession_id=%s&simsession_number=%0f", subsessionId, simsession["simsession_number"].(float64)))
+				if err != nil {
+					log.Panic(err)
+				}
+
+				var events map[string]interface{}
+
+				err = json.Unmarshal(data, &events)
+				if err != nil {
+					log.Panic(err)
+				}
+
+				for _, event := range events["_chunk_data"].([]interface{}) {
+					event := event.(map[string]interface{})
+
+					checkId := int(event["cust_id"].(float64))
+					if checkId == 0 {
+						checkId = int(event["group_id"].(float64))
+					}
+
+					if checkId == memberId {
+						fmt.Printf("\t%s \"%s\"\n", event["description"], event["message"])
+					}
+				}
+			}
+		}
+	}
 }

@@ -1,3 +1,5 @@
 irfetch
 .irfetch_cache
 .cache
+*.parquet
+ban_check

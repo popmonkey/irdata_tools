@@ -26,7 +26,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/ban_check/",
-            "args": ["/Users/jules/irs.key", "/Users/jules/ir.creds", "Jason Chess", "2022-08-10"],
+            "args": ["/Users/jules/irs.key", "/Users/jules/ir.creds", "Saumya Patel", "2024-08-09", "70578582"],
         },    
     ]
 }
