@@ -17,9 +17,9 @@ import (
 	"github.com/popmonkey/irdata"
 )
 
-// ./irfetch -c -v ~/irs.key ~/ir.creds "/data/league/seasons?league_id=8093"
-// ./irfetch -c -v ~/irs.key ~/ir.creds "/data/league/season_sessions?league_id=8093&season_id=108390"
-// ./irfetch -c -v ~/irs.key ~/ir.creds "/data/results/get?subsession_id=69983822"
+// ./irfetch -c -v ~/ir.key ~/ir.creds "/data/league/seasons?league_id=8093"
+// ./irfetch -c -v ~/ir.key ~/ir.creds "/data/league/season_sessions?league_id=8093&season_id=108390"
+// ./irfetch -c -v ~/ir.key ~/ir.creds "/data/results/get?subsession_id=69983822"
 
 var (
 	ir            *irdata.Irdata
