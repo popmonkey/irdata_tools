@@ -3,3 +3,4 @@ irfetch
 .cache
 *.parquet
 ban_check
+.racing_history_cache
