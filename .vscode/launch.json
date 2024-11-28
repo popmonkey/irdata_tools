@@ -18,6 +18,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/league_db/",
+            "dlvFlags": ["--check-go-version=false"],
             "args": ["${userHome}/ir.key", "${userHome}/ir.creds", "8093"],
         },
         {
