@@ -1,6 +1,6 @@
 irfetch
 .irfetch_cache
 .cache
-*.parquet
 ban_check
 .racing_history_cache
+league_db/data/*
