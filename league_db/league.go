@@ -116,10 +116,6 @@ func (l *League) processSeason(seasonId int) {
 		delete(s, "weather")
 	}
 
-	if len(rawSessions["sessions"].([]interface{})) == 0 {
-		return
-	}
-
 	l.WriteParquet(rawSessions["sessions"], fmt.Sprintf("sessions-%d", seasonId))
 
 	for _, s := range rawSessions["sessions"].([]interface{}) {
