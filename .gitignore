@@ -4,3 +4,4 @@ irfetch
 ban_check
 .racing_history_cache
 league_db/data/*
+league_db/league_db
