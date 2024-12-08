@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "github.com/marcboeker/go-duckdb"
 )
@@ -63,24 +64,44 @@ func getTmpFile(name string) *os.File {
 }
 
 func (l *League) MergeParquet(pattern string, target string) {
+	tmp := fmt.Sprintf("data/TMP_%s.parquet", target)
+	merged := fmt.Sprintf("data/%s.parquet", target)
+
 	files, err := filepath.Glob(fmt.Sprintf("data/%s.parquet", pattern))
 	if err != nil {
 		log.Panic(err)
 	}
 
-	if len(files) > 0 {
-		_, err = l.db.ExecContext(context.Background(),
-			fmt.Sprintf("COPY (SELECT * FROM 'data/%s.parquet') TO 'data/%s.parquet'", pattern, target))
-		if err != nil {
+	if len(files) == 0 {
+		return
+	}
+
+	_, err = os.Stat(merged)
+	if err != nil {
+		if !os.IsNotExist(err) {
 			log.Panic(err)
 		}
+	} else {
+		files = append(files, merged)
+	}
 
-		for _, f := range files {
-			err = os.Remove(f)
-			if err != nil && os.IsNotExist(err) {
-				log.Panic(err)
-			}
+	sql := fmt.Sprintf("COPY (SELECT * FROM read_parquet(['%s'], union_by_name=True)) TO '%s'",
+		strings.Join(files, "','"), tmp)
+	_, err = l.db.ExecContext(context.Background(), sql)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	for _, f := range files {
+		err = os.Remove(f)
+		if err != nil && os.IsNotExist(err) {
+			log.Panic(err)
 		}
+	}
+
+	err = os.Rename(tmp, merged)
+	if err != nil {
+		log.Panic(err)
 	}
 }
 
