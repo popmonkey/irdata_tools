@@ -26,16 +26,16 @@ func (l *League) CloseWriter() {
 	l.db.Close()
 }
 
-func (l *League) jsonToParquet(fnJson string, fnParquet string) {
-	_, err := l.db.ExecContext(context.Background(),
-		fmt.Sprintf("COPY (SELECT * FROM READ_JSON_AUTO('%s')) TO 'data/%s' (FORMAT PARQUET)",
-			fnJson, fnParquet))
+func getTmpFile(name string) *os.File {
+	f, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("%s*.json", name))
 	if err != nil {
 		log.Panic(err)
 	}
+
+	return f
 }
 
-func (l *League) WriteParquet(data any, name string) {
+func (l *League) WriteJson(data any, name string) {
 	bytes, err := json.Marshal(data)
 	if err != nil {
 		log.Panic(err)
@@ -51,23 +51,20 @@ func (l *League) WriteParquet(data any, name string) {
 
 	defer os.Remove(f.Name())
 
-	l.jsonToParquet(f.Name(), fmt.Sprintf("%s.parquet", name))
-}
-
-func getTmpFile(name string) *os.File {
-	f, err := os.CreateTemp(os.TempDir(), fmt.Sprintf("%s*.json", name))
+	// this conversion normalizes the raw json fixing stuff like
+	//  timestamps to be consistent
+	sql := fmt.Sprintf("COPY (SELECT * FROM read_json('%s')) TO 'data/%s.json'", f.Name(), name)
+	_, err = l.db.ExecContext(context.Background(), sql)
 	if err != nil {
 		log.Panic(err)
 	}
-
-	return f
 }
 
-func (l *League) MergeParquet(pattern string, target string) {
-	tmp := fmt.Sprintf("data/TMP_%s.parquet", target)
-	merged := fmt.Sprintf("data/%s.parquet", target)
+func (l *League) MergeJson(pattern string, target string) {
+	tmp := fmt.Sprintf("data/TMP_%s.json", target)
+	merged := fmt.Sprintf("data/%s.json", target)
 
-	files, err := filepath.Glob(fmt.Sprintf("data/%s.parquet", pattern))
+	files, err := filepath.Glob(fmt.Sprintf("data/%s.json", pattern))
 	if err != nil {
 		log.Panic(err)
 	}
@@ -85,7 +82,7 @@ func (l *League) MergeParquet(pattern string, target string) {
 		files = append(files, merged)
 	}
 
-	sql := fmt.Sprintf("COPY (SELECT * FROM read_parquet(['%s'], union_by_name=True)) TO '%s'",
+	sql := fmt.Sprintf("COPY (SELECT * FROM read_json(['%s'], union_by_name=true)) TO '%s'",
 		strings.Join(files, "','"), tmp)
 	_, err = l.db.ExecContext(context.Background(), sql)
 	if err != nil {
@@ -125,4 +122,22 @@ func (l *League) SessionExists(sessionPrefix string, subsessionId int) bool {
 	}
 
 	return exists
+}
+
+func (l *League) ConvertJsonToParquet(fn string) {
+	sql := fmt.Sprintf("COPY (SELECT * FROM read_json('data/%s.json')) TO 'data/%s.parquet'", fn, fn)
+
+	_, err := l.db.ExecContext(context.Background(), sql)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	os.Remove(fmt.Sprintf("data/%s.json", fn))
+}
+
+func (l *League) ConvertParquetToJson(fn string) {
+	sql := fmt.Sprintf("COPY (SELECT * FROM read_parquet('data/%s.parquet')) TO 'data/%s.json'", fn, fn)
+
+	// ignore errors
+	l.db.ExecContext(context.Background(), sql)
 }

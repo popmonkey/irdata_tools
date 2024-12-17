@@ -31,6 +31,14 @@ func (l *League) processLeague() {
 	l.ir.SetLogLevel(irdata.LogLevelInfo)
 	l.OpenWriter()
 
+	l.ConvertParquetToJson("league")
+	l.ConvertParquetToJson("roster")
+	l.ConvertParquetToJson("seasons")
+	l.ConvertParquetToJson("sessions")
+	l.ConvertParquetToJson("results")
+	l.ConvertParquetToJson("team-results")
+	l.ConvertParquetToJson("lap_data")
+
 	defer l.CloseWriter()
 
 	// read league info
@@ -49,7 +57,7 @@ func (l *League) processLeague() {
 	// drop this roster because we'll load that into another parquet
 	delete(rawLeague, "roster")
 
-	l.WriteParquet(rawLeague, "league")
+	l.WriteJson(rawLeague, "league")
 
 	// read league roster
 	data, err = l.ir.GetWithCache(fmt.Sprintf("/data/league/roster?league_id=%d", l.leagueId), cacheTTL)
@@ -64,7 +72,7 @@ func (l *League) processLeague() {
 		log.Panic(err)
 	}
 
-	l.WriteParquet(rawRoster["roster"], "roster")
+	l.WriteJson(rawRoster["roster"], "roster")
 
 	// read league seasons
 	data, err = l.ir.GetWithCache(fmt.Sprintf("/data/league/seasons?league_id=%d&retired=true", l.leagueId), cacheTTL)
@@ -79,7 +87,7 @@ func (l *League) processLeague() {
 		log.Panic(err)
 	}
 
-	l.WriteParquet(rawSeasons["seasons"], "seasons")
+	l.WriteJson(rawSeasons["seasons"], "seasons")
 
 	for _, s := range rawSeasons["seasons"].([]interface{}) {
 		s := s.(map[string]interface{})
@@ -87,11 +95,18 @@ func (l *League) processLeague() {
 		l.processSeason(int(s["season_id"].(float64)))
 	}
 
-	l.MergeParquet("sessions-*", "sessions")
-	l.MergeParquet("results-*", "results")
-	l.MergeParquet("team-results-*", "team-results")
-	l.MergeParquet("lap_data-*", "lap_data")
-	l.MergeParquet("team-lap_data-*", "team-lap_data")
+	l.MergeJson("sessions-*", "sessions")
+	l.MergeJson("results-*", "results")
+	l.MergeJson("team-results-*", "team-results")
+	l.MergeJson("lap_data-*", "lap_data")
+
+	l.ConvertJsonToParquet("league")
+	l.ConvertJsonToParquet("roster")
+	l.ConvertJsonToParquet("seasons")
+	l.ConvertJsonToParquet("sessions")
+	l.ConvertJsonToParquet("results")
+	l.ConvertJsonToParquet("team-results")
+	l.ConvertJsonToParquet("lap_data")
 }
 
 func (l *League) processSeason(seasonId int) {
@@ -109,14 +124,7 @@ func (l *League) processSeason(seasonId int) {
 		log.Panic(err)
 	}
 
-	// strip weather for now
-	for _, s := range rawSessions["sessions"].([]interface{}) {
-		s := s.(map[string]interface{})
-
-		delete(s, "weather")
-	}
-
-	l.WriteParquet(rawSessions["sessions"], fmt.Sprintf("sessions-%d", seasonId))
+	l.WriteJson(rawSessions["sessions"], fmt.Sprintf("sessions-%d", seasonId))
 
 	for _, s := range rawSessions["sessions"].([]interface{}) {
 		s := s.(map[string]interface{})
@@ -130,9 +138,9 @@ func (l *League) processSeason(seasonId int) {
 		}
 	}
 
-	l.MergeParquet("sessions-*", "sessions")
-	l.MergeParquet("results-*", "results")
-	l.MergeParquet("team-results-*", "team-results")
+	l.MergeJson("sessions-*", "sessions")
+	l.MergeJson("results-*", "results")
+	l.MergeJson("team-results-*", "team-results")
 }
 
 func (l *League) processSession(sessionPrefix string, session map[string]interface{}) {
@@ -192,13 +200,11 @@ func (l *League) processSession(sessionPrefix string, session map[string]interfa
 			delete(laps, "chunk_info")
 			delete(laps, "_chunk_data")
 
-			l.WriteParquet(laps, fmt.Sprintf("%slap_data-%d_%d_%d", sessionPrefix, subsessionId, simsessionNumber, lapperId))
+			l.WriteJson(laps, fmt.Sprintf("lap_data-%d_%d_%d", subsessionId, simsessionNumber, lapperId))
 		}
-		l.WriteParquet(s, fmt.Sprintf("%sresults-%d_%d", sessionPrefix, subsessionId, simsessionNumber))
 
-		l.MergeParquet(
-			fmt.Sprintf("%slap_data-*", sessionPrefix),
-			fmt.Sprintf("%slap_data", sessionPrefix),
-		)
+		l.WriteJson(s, fmt.Sprintf("%sresults-%d_%d", sessionPrefix, subsessionId, simsessionNumber))
+
+		l.MergeJson("lap_data-*", "lap_data")
 	}
 }
