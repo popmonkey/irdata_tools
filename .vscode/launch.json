@@ -27,7 +27,7 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/ban_check/",
-            "args": ["${userHome}/ir.key", "${userHome}/ir.creds", "Andy Dixon", "2024-09-07", "71259157"],
+            "args": ["${userHome}/ir.key", "${userHome}/ir.creds", "Ole Steinbraten", "2025-01-18", "74206920"],
         },    
         {
             "name": "Launch Race History",

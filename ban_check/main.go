@@ -264,6 +264,32 @@ func main() {
 			simsession := simsession.(map[string]interface{})
 
 			if simsession["simsession_name"] == "RACE" {
+				for _, result := range simsession["results"].([]interface{}) {
+					result := result.(map[string]interface{})
+
+					driverResults, ok := result["driver_results"]
+					if ok {
+						for _, driverResult := range driverResults.([]interface{}) {
+							driverResult := driverResult.(map[string]interface{})
+
+							checkId := int(driverResult["cust_id"].(float64))
+							if checkId == memberId {
+								result = driverResult
+							}
+						}
+					}
+
+					_, ok = result["cust_id"]
+					if ok {
+						checkId := int(result["cust_id"].(float64))
+						if checkId == memberId {
+							fmt.Printf("Position: %d, Status: %s\n",
+								int(result["finish_position"].(float64)),
+								result["reason_out"])
+						}
+					}
+				}
+
 				data, err = ir.Get(fmt.Sprintf("/data/results/event_log?subsession_id=%s&simsession_number=%0f", subsessionId, simsession["simsession_number"].(float64)))
 				if err != nil {
 					log.Panic(err)
