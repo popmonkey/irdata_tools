@@ -200,7 +200,7 @@ func main() {
 			log.Panic(err)
 		}
 
-		if s["official_session"].(bool) && int(s["event_type"].(float64)) == 5 {
+		if int(s["event_type"].(float64)) == 5 {
 			if showDetailsFlag {
 				fmt.Printf("%[4]s %[1]t %[2]s [%[3]d] : laps: %[6]d of %[7]d inc: %[5]d\n",
 					s["official_session"].(bool),
@@ -264,6 +264,31 @@ func main() {
 			simsession := simsession.(map[string]interface{})
 
 			if simsession["simsession_name"] == "RACE" {
+				data, err = ir.Get(fmt.Sprintf("/data/results/event_log?subsession_id=%s&simsession_number=%0f", subsessionId, simsession["simsession_number"].(float64)))
+				if err != nil {
+					log.Panic(err)
+				}
+
+				var events map[string]interface{}
+
+				err = json.Unmarshal(data, &events)
+				if err != nil {
+					log.Panic(err)
+				}
+
+				for _, event := range events["_chunk_data"].([]interface{}) {
+					event := event.(map[string]interface{})
+
+					checkId := int(event["cust_id"].(float64))
+					if checkId == 0 {
+						checkId = int(event["group_id"].(float64))
+					}
+
+					if checkId == memberId {
+						fmt.Printf("\t%s \"%s\"\n", event["description"], event["message"])
+					}
+				}
+
 				for _, result := range simsession["results"].([]interface{}) {
 					result := result.(map[string]interface{})
 
@@ -287,31 +312,6 @@ func main() {
 								int(result["finish_position"].(float64)),
 								result["reason_out"])
 						}
-					}
-				}
-
-				data, err = ir.Get(fmt.Sprintf("/data/results/event_log?subsession_id=%s&simsession_number=%0f", subsessionId, simsession["simsession_number"].(float64)))
-				if err != nil {
-					log.Panic(err)
-				}
-
-				var events map[string]interface{}
-
-				err = json.Unmarshal(data, &events)
-				if err != nil {
-					log.Panic(err)
-				}
-
-				for _, event := range events["_chunk_data"].([]interface{}) {
-					event := event.(map[string]interface{})
-
-					checkId := int(event["cust_id"].(float64))
-					if checkId == 0 {
-						checkId = int(event["group_id"].(float64))
-					}
-
-					if checkId == memberId {
-						fmt.Printf("\t%s \"%s\"\n", event["description"], event["message"])
 					}
 				}
 			}

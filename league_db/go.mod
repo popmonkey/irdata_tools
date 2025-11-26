@@ -4,7 +4,7 @@ go 1.23
 
 require (
 	github.com/marcboeker/go-duckdb v1.8.3
-	github.com/popmonkey/irdata v0.4.5
+	github.com/popmonkey/irdata v0.6.1
 )
 
 require (

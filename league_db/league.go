@@ -54,7 +54,7 @@ func (l *League) processLeague() {
 		log.Panic(err)
 	}
 
-	// drop this roster because we'll load that into another parquet
+	// drop this roster because we'll make an explicit call to the roster API and save into another parquet
 	delete(rawLeague, "roster")
 
 	l.WriteJson(rawLeague, "league")

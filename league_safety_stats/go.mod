@@ -4,7 +4,7 @@ go 1.22.4
 
 require (
 	github.com/mattn/go-sqlite3 v1.14.22
-	github.com/popmonkey/irdata v0.4.5
+	github.com/popmonkey/irdata v0.6.1
 )
 
 require (

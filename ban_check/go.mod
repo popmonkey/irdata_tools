@@ -4,7 +4,7 @@ go 1.22.4
 
 require (
 	github.com/araddon/dateparse v0.0.0-20210429162001-6b43995a97de
-	github.com/popmonkey/irdata v0.4.5
+	github.com/popmonkey/irdata v0.6.1
 )
 
 require (
